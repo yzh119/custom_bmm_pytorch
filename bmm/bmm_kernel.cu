@@ -77,7 +77,11 @@ std::vector<at::Tensor> bmm_cuda_backward(
     auto dA = at::zeros_like(A, A.options()), dB = at::zeros_like(B, B.options());
     
     const dim3 blocks(b);
-    dim3 threads(32, 32);
+
+    // (n small, m large)
+    auto tx = n < 32 ? n: 32;
+    auto ty = m < (1024 / tx) ? m: (1024 / tx);
+    dim3 threads(tx, ty); 
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
     AT_DISPATCH_FLOATING_TYPES(A.type(), "bmm_cuda_backward_0", ([&] {
@@ -87,6 +91,11 @@ std::vector<at::Tensor> bmm_cuda_backward(
             dA.data<scalar_t>(),
             b, n, p, m);
     }));
+
+    // (m large, p small) 
+    ty = p < 32 ? p: 32;
+    tx = m < (1024 / ty) ? m: (1024 / ty);
+    threads = dim3(tx, ty);
 
     AT_DISPATCH_FLOATING_TYPES(A.type(), "bmm_cuda_backward_1", ([&] {
         bmm_kernel<scalar_t><<<blocks, threads, 0, stream>>>(
